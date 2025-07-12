@@ -8,7 +8,6 @@ import { TrendingTopics } from "@/components/trending-topics"
 import { Search, TrendingUp, Users, Hash } from "lucide-react"
 
 export default function ExplorePage() {
-  // Mock data for demonstration
   const trendingUsers = [
     { id: "1", username: "web3_dev", followers: 1243, avatar: "/placeholder.svg?height=50&width=50" },
     { id: "2", username: "crypto_queen", followers: 982, avatar: "/placeholder.svg?height=50&width=50" },
