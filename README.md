@@ -2,7 +2,7 @@
 
 **Liber** is a decentralized social media app built with **Next.js 14**, **TypeScript**, **Tailwind CSS**, and **PNPM**. This project aims to redefine online social interactions using Web3 technologies and a user-first design. Every post and profile is an NFT, making data ownership transparent and secure.
 
-![WhatsApp Image 2025-04-06 at 19 37 55](https://github.com/user-attachments/assets/125a401d-53e8-4080-bac6-bb7382f17053)
+<!-- ![WhatsApp Image 2025-04-06 at 19 37 55](https://github.com/user-attachments/assets/125a401d-53e8-4080-bac6-bb7382f17053)
 
 
 ![WhatsApp Image 2025-04-06 at 19 37 55(3)](https://github.com/user-attachments/assets/229b94d9-a85e-4893-bc27-70f04fccecea)
@@ -11,7 +11,7 @@
 ![WhatsApp Image 2025-04-06 at 19 37 55(2)](https://github.com/user-attachments/assets/1ea4eee5-f9d5-46a2-90eb-74fa03091890)
 
 
-![WhatsApp Image 2025-04-06 at 19 37 55(1)](https://github.com/user-attachments/assets/08dc8eb8-6e01-4057-929f-e495dcfe7b57)
+![WhatsApp Image 2025-04-06 at 19 37 55(1)](https://github.com/user-attachments/assets/08dc8eb8-6e01-4057-929f-e495dcfe7b57) -->
 
 
 ## 🌐 Features
