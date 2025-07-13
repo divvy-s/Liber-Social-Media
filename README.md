@@ -74,6 +74,3 @@ pnpm dev        # Run the app in development mode
 pnpm build      # Build the app for production
 pnpm lint       # Run linter
 
-🧾 License
-
-This project is open source under the MIT License.
