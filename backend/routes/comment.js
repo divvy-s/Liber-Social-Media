@@ -10,6 +10,10 @@ router.post('/', async (req, res) => {
   try {
     const comment = new Comment({ post, user, content });
     await comment.save();
+    // Emit live feed update
+    if (req.app.emitFeedEvent) {
+      req.app.emitFeedEvent('newComment', comment);
+    }
     res.json(comment);
   } catch (err) {
     res.status(500).json({ error: err.message });

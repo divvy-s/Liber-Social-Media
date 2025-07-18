@@ -6,25 +6,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PostProvider } from "@/components/post-context"
 import { TrendingTopics } from "@/components/trending-topics"
 import { Search, TrendingUp, Users, Hash } from "lucide-react"
+import { useState, useEffect } from "react";
 
 export default function ExplorePage() {
-  const trendingUsers = [
-    { id: "1", username: "web3_dev", followers: 1243, avatar: "/placeholder.svg?height=50&width=50" },
-    { id: "2", username: "crypto_queen", followers: 982, avatar: "/placeholder.svg?height=50&width=50" },
-    { id: "3", username: "nft_collector", followers: 754, avatar: "/placeholder.svg?height=50&width=50" },
-    { id: "4", username: "blockchain_guru", followers: 621, avatar: "/placeholder.svg?height=50&width=50" },
-  ]
+  const [search, setSearch] = useState("");
+  const [searchTab, setSearchTab] = useState("trending");
+  const [trendingUsers, setTrendingUsers] = useState<any[]>([]);
+  const [trendingHashtags, setTrendingHashtags] = useState<any[]>([]);
+  const [userResults, setUserResults] = useState<any[]>([]);
+  const [postResults, setPostResults] = useState<any[]>([]);
+  const [hashtagResults, setHashtagResults] = useState<any[]>([]);
 
-  const trendingHashtags = [
-    { id: "1", name: "Web3", postCount: 1243 },
-    { id: "2", name: "NFTs", postCount: 982 },
-    { id: "3", name: "Ethereum", postCount: 754 },
-    { id: "4", name: "Blockchain", postCount: 621 },
-    { id: "5", name: "DeFi", postCount: 512 },
-    { id: "6", name: "Metaverse", postCount: 423 },
-    { id: "7", name: "DAOs", postCount: 387 },
-    { id: "8", name: "Crypto", postCount: 356 },
-  ]
+  // Fetch trending users and hashtags
+  useEffect(() => {
+    fetch("/api/explore/trending/users").then(res => res.json()).then(setTrendingUsers);
+    fetch("/api/explore/trending/hashtags").then(res => res.json()).then(setTrendingHashtags);
+  }, []);
+
+  // Search logic
+  const handleSearch = async (query: string) => {
+    if (!query) return;
+    setSearch(query);
+    setSearchTab("posts");
+    const [users, posts, hashtags] = await Promise.all([
+      fetch(`/api/explore/users/${query}`).then(res => res.json()),
+      fetch(`/api/explore/posts/${query}`).then(res => res.json()),
+      fetch(`/api/explore/hashtags/${query}`).then(res => res.json()),
+    ]);
+    setUserResults(users);
+    setPostResults(posts);
+    setHashtagResults(hashtags);
+  };
 
   return (
     <PostProvider>
@@ -47,44 +59,73 @@ export default function ExplorePage() {
                   <Input
                     placeholder="Search posts, users, or hashtags..."
                     className="pl-10 bg-muted border-primary/20 focus:border-primary/50"
+                    onKeyDown={e => {
+                      if (e.key === "Enter") handleSearch((e.target as HTMLInputElement).value);
+                    }}
                   />
                 </div>
               </div>
 
-              <Tabs defaultValue="trending" className="mb-6">
+              <Tabs value={searchTab} onValueChange={setSearchTab} className="mb-6">
                 <TabsList>
                   <TabsTrigger value="trending">
                     <TrendingUp className="w-4 h-4 mr-2" />
                     Trending
                   </TabsTrigger>
-                  <TabsTrigger value="users">
-                    <Users className="w-4 h-4 mr-2" />
-                    Users
-                  </TabsTrigger>
-                  <TabsTrigger value="hashtags">
-                    <Hash className="w-4 h-4 mr-2" />
-                    Hashtags
-                  </TabsTrigger>
+                  <TabsTrigger value="posts">Posts</TabsTrigger>
+                  <TabsTrigger value="users">Users</TabsTrigger>
+                  <TabsTrigger value="hashtags">Hashtags</TabsTrigger>
                 </TabsList>
                 <TabsContent value="trending" className="mt-4">
                   <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
                     <CardHeader>
-                      <CardTitle className="text-lg">Trending Content</CardTitle>
+                      <CardTitle className="text-lg">Trending Users</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid gap-4">
-                        {trendingHashtags.slice(0, 4).map((hashtag) => (
-                          <div
-                            key={hashtag.id}
-                            className="flex items-center justify-between hover:bg-muted p-2 rounded-md transition-colors"
-                          >
+                        {trendingUsers.map((user) => (
+                          <div key={user._id} className="flex items-center justify-between hover:bg-muted p-2 rounded-md transition-colors">
                             <div className="flex items-center">
-                              <Hash className="h-4 w-4 mr-2 text-primary" />
-                              <span className="font-medium">{hashtag.name}</span>
+                              <div className="w-10 h-10 rounded-full overflow-hidden mr-3">
+                                <img src={user.avatar || "/placeholder.svg"} alt={user.username} className="w-full h-full object-cover" />
+                              </div>
+                              <span className="font-medium">@{user.username}</span>
                             </div>
-                            <span className="text-sm text-muted-foreground">{hashtag.postCount} posts</span>
+                            <span className="text-sm text-muted-foreground">{user.followers?.length || 0} followers</span>
                           </div>
                         ))}
+                      </div>
+                      <div className="mt-6">
+                        <CardTitle className="text-lg">Trending Hashtags</CardTitle>
+                        <div className="grid gap-4 mt-2">
+                          {trendingHashtags.map((hashtag) => (
+                            <div key={hashtag.name} className="flex items-center justify-between hover:bg-muted p-2 rounded-md transition-colors">
+                              <div className="flex items-center">
+                                <Hash className="h-4 w-4 mr-2 text-primary" />
+                                <span className="font-medium">{hashtag.name}</span>
+                              </div>
+                              <span className="text-sm text-muted-foreground">{hashtag.count} posts</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+                <TabsContent value="posts" className="mt-4">
+                  <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Search Results: Posts</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4">
+                        {postResults.map((post) => (
+                          <div key={post._id} className="p-2 border-b border-border/30">
+                            <div className="font-medium">{post.content}</div>
+                            <div className="text-xs text-muted-foreground">By @{post.user?.username || "Unknown"}</div>
+                          </div>
+                        ))}
+                        {postResults.length === 0 && <div className="text-muted-foreground">No posts found.</div>}
                       </div>
                     </CardContent>
                   </Card>
@@ -92,28 +133,22 @@ export default function ExplorePage() {
                 <TabsContent value="users" className="mt-4">
                   <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
                     <CardHeader>
-                      <CardTitle className="text-lg">Popular Users</CardTitle>
+                      <CardTitle className="text-lg">Search Results: Users</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid gap-4">
-                        {trendingUsers.map((user) => (
-                          <div
-                            key={user.id}
-                            className="flex items-center justify-between hover:bg-muted p-2 rounded-md transition-colors"
-                          >
+                        {userResults.map((user) => (
+                          <div key={user._id} className="flex items-center justify-between hover:bg-muted p-2 rounded-md transition-colors">
                             <div className="flex items-center">
                               <div className="w-10 h-10 rounded-full overflow-hidden mr-3">
-                                <img
-                                  src={user.avatar || "/placeholder.svg"}
-                                  alt={user.username}
-                                  className="w-full h-full object-cover"
-                                />
+                                <img src={user.avatar || "/placeholder.svg"} alt={user.username} className="w-full h-full object-cover" />
                               </div>
                               <span className="font-medium">@{user.username}</span>
                             </div>
-                            <span className="text-sm text-muted-foreground">{user.followers} followers</span>
+                            <span className="text-sm text-muted-foreground">{user.followers?.length || 0} followers</span>
                           </div>
                         ))}
+                        {userResults.length === 0 && <div className="text-muted-foreground">No users found.</div>}
                       </div>
                     </CardContent>
                   </Card>
@@ -121,22 +156,17 @@ export default function ExplorePage() {
                 <TabsContent value="hashtags" className="mt-4">
                   <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
                     <CardHeader>
-                      <CardTitle className="text-lg">Popular Hashtags</CardTitle>
+                      <CardTitle className="text-lg">Search Results: Hashtags</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {trendingHashtags.map((hashtag) => (
-                          <div
-                            key={hashtag.id}
-                            className="flex items-center justify-between hover:bg-muted p-2 rounded-md transition-colors"
-                          >
-                            <div className="flex items-center">
-                              <Hash className="h-4 w-4 mr-2 text-primary" />
-                              <span className="font-medium">{hashtag.name}</span>
-                            </div>
-                            <span className="text-sm text-muted-foreground">{hashtag.postCount} posts</span>
+                      <div className="grid gap-4">
+                        {hashtagResults.map((post) => (
+                          <div key={post._id} className="p-2 border-b border-border/30">
+                            <div className="font-medium">{post.content}</div>
+                            <div className="text-xs text-muted-foreground">By @{post.user?.username || "Unknown"}</div>
                           </div>
                         ))}
+                        {hashtagResults.length === 0 && <div className="text-muted-foreground">No hashtags found.</div>}
                       </div>
                     </CardContent>
                   </Card>
@@ -150,6 +180,6 @@ export default function ExplorePage() {
         </main>
       </div>
     </PostProvider>
-  )
+  );
 }
 

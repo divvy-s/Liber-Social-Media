@@ -6,58 +6,51 @@ import { PostProvider } from "@/components/post-context"
 import { Bell, Heart, MessageSquare, Repeat, User } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { formatDistanceToNow } from "date-fns"
+import { useSocket } from "@/components/socket-context";
+import { useEffect, useState } from "react";
+import { toast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
+import { useWeb3 } from "@/components/web3-provider";
 
 export default function NotificationsPage() {
-  // Mock data for demonstration
-  const notifications = [
-    {
-      id: "1",
-      type: "like",
-      user: {
-        username: "web3_dev",
-        avatar: "/placeholder.svg?height=50&width=50",
-      },
-      content: "liked your post",
-      postTitle: "Introducing Liber: The Future of Social Media",
-      createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // 5 minutes ago
-      read: false,
-    },
-    {
-      id: "2",
-      type: "comment",
-      user: {
-        username: "crypto_queen",
-        avatar: "/placeholder.svg?height=50&width=50",
-      },
-      content: "commented on your post",
-      postTitle: "How NFTs are Changing Digital Ownership",
-      createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(), // 30 minutes ago
-      read: false,
-    },
-    {
-      id: "3",
-      type: "follow",
-      user: {
-        username: "nft_collector",
-        avatar: "/placeholder.svg?height=50&width=50",
-      },
-      content: "started following you",
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-      read: true,
-    },
-    {
-      id: "4",
-      type: "repost",
-      user: {
-        username: "blockchain_guru",
-        avatar: "/placeholder.svg?height=50&width=50",
-      },
-      content: "reposted your post",
-      postTitle: "Web3 Development Tips and Tricks",
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(), // 5 hours ago
-      read: true,
-    },
-  ]
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const socket = useSocket();
+  const { user } = useWeb3();
+  const userId = user?._id;
+
+  useEffect(() => {
+    if (socket && userId) {
+      socket.emit("join", userId);
+      socket.on("notification", (notification) => {
+        setNotifications((prev) => [notification, ...prev]);
+        toast({
+          title: "New Notification",
+          description: notification.content || notification.type,
+        });
+      });
+      return () => {
+        socket.off("notification");
+      };
+    }
+  }, [socket, userId]);
+
+  // Fetch notifications from backend
+  useEffect(() => {
+    if (!userId) return;
+    fetch(`/api/notification/user/${userId}`)
+      .then((res) => res.json())
+      .then((data) => setNotifications(data));
+  }, [userId]);
+
+  // Mark as read/unread
+  const markAsRead = async (id: string) => {
+    await fetch(`/api/notification/${id}/read`, { method: "POST" });
+    setNotifications((prev) => prev.map((n) => n._id === id ? { ...n, read: true } : n));
+  };
+  const markAsUnread = async (id: string) => {
+    await fetch(`/api/notification/${id}/unread`, { method: "POST" });
+    setNotifications((prev) => prev.map((n) => n._id === id ? { ...n, read: false } : n));
+  };
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -108,32 +101,30 @@ export default function NotificationsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {notifications.map((notification) => (
-                        <div
-                          key={notification.id}
-                          className={`flex items-start p-3 rounded-md transition-colors ${
-                            notification.read ? "bg-transparent" : "bg-muted"
-                          }`}
-                        >
-                          <div className="flex-shrink-0 mr-4">
-                            <Avatar>
-                              <AvatarImage src={notification.user.avatar} alt={notification.user.username} />
-                              <AvatarFallback>{notification.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                            </Avatar>
-                          </div>
-                          <div className="flex-grow">
-                            <div className="flex items-center">
-                              <span className="font-medium">@{notification.user.username}</span>
-                              <span className="mx-1">{notification.content}</span>
-                              {notification.postTitle && (
-                                <span className="font-medium text-primary">"{notification.postTitle}"</span>
-                              )}
+                      {notifications.map((notification, idx) => (
+                        <div key={notification._id || idx} className="flex items-center gap-4">
+                          <Avatar>
+                            <AvatarImage src={notification.fromUser?.avatar || "/placeholder.svg"} />
+                            <AvatarFallback>
+                              {notification.fromUser?.username?.slice(0, 2).toUpperCase() || "U"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="font-medium">
+                              {notification.fromUser?.username || "Someone"} {notification.content || notification.type}
                             </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(notification.createdAt).toLocaleString()}
                             </div>
                           </div>
-                          <div className="flex-shrink-0 ml-2">{getNotificationIcon(notification.type)}</div>
+                          <Button
+                            size="sm"
+                            variant={notification.read ? "outline" : "default"}
+                            onClick={() => notification.read ? markAsUnread(notification._id) : markAsRead(notification._id)}
+                            className="ml-auto"
+                          >
+                            {notification.read ? "Mark as Unread" : "Mark as Read"}
+                          </Button>
                         </div>
                       ))}
                     </div>

@@ -47,23 +47,27 @@ export function ProfileEditDialog({ profile, onSave, trigger }: ProfileEditDialo
   const bannerInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
-      // In a real app, we would upload the file to a storage service
-      // For this demo, we'll use a placeholder image with a random parameter to simulate a new image
-      setAvatarUrl(`/placeholder.svg?height=150&width=150&random=${Math.random()}`)
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      setAvatarUrl(data.url);
     }
-  }
+  };
 
-  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const handleBannerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
-      // In a real app, we would upload the file to a storage service
-      // For this demo, we'll use a placeholder image with a random parameter to simulate a new image
-      setBannerUrl(`/placeholder.svg?height=300&width=1200&random=${Math.random()}`)
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      setBannerUrl(data.url);
     }
-  }
+  };
 
   const removeAvatar = () => {
     setAvatarUrl("/placeholder.svg?height=150&width=150")

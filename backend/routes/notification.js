@@ -10,6 +10,10 @@ router.post('/', async (req, res) => {
   try {
     const notification = new Notification({ user, type, fromUser, post, content });
     await notification.save();
+    // Emit live notification
+    if (req.app.emitNotification) {
+      req.app.emitNotification(user, notification);
+    }
     res.json(notification);
   } catch (err) {
     res.status(500).json({ error: err.message });

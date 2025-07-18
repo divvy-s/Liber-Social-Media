@@ -14,6 +14,8 @@ import { CommentForm } from "@/components/comment-form"
 import { CommentList } from "@/components/comment-list"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import Image from "next/image"
+import { useSocket } from "@/components/socket-context";
+import { useEffect } from "react";
 
 interface PostProps {
   post: PostType
@@ -36,54 +38,23 @@ export function Post({ post }: PostProps) {
   const [mintingStatus, setMintingStatus] = useState<"pending" | "success" | "error">("pending")
   const [showImageModal, setShowImageModal] = useState(false)
   const [txHash, setTxHash] = useState<string | null>(post.txHash || null)
+  const socket = useSocket();
+  const [nftTokenId, setNftTokenId] = useState(post.nftTokenId || "");
+  const [minting, setMinting] = useState(false);
 
-  const handleUpvote = async () => {
-    if (!account) {
-      toast({
-        title: "Wallet not connected",
-        description: "Please connect your wallet to upvote posts",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsUpvoting(true)
-    try {
-      // In a real app, this would call a smart contract function
-      // await contract.upvote(post.tokenId)
-
-      // Simulate blockchain delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      if (hasUpvoted) {
-        setUpvotes(upvotes - 1)
-        setHasUpvoted(false)
-      } else {
-        setUpvotes(upvotes + 1)
-        setHasUpvoted(true)
-
-        if (hasDownvoted) {
-          setDownvotes(downvotes - 1)
-          setHasDownvoted(false)
-        }
+  // Listen for live reactions
+  useEffect(() => {
+    if (!socket) return;
+    const handleReaction = ({ postId, userId, reaction }) => {
+      if (postId === post._id && reaction === "like") {
+        setUpvotes((prev) => prev + 1);
       }
-
-      toast({
-        title: hasUpvoted ? "Upvote removed" : "Post upvoted",
-        description: hasUpvoted
-          ? "Your upvote has been removed from this post"
-          : "Your upvote has been recorded on the blockchain",
-      })
-    } catch (error: any) {
-      toast({
-        title: "Upvote failed",
-        description: error.message || "Failed to upvote post",
-        variant: "destructive",
-      })
-    } finally {
-      setIsUpvoting(false)
-    }
-  }
+    };
+    socket.on("reaction", handleReaction);
+    return () => {
+      socket.off("reaction", handleReaction);
+    };
+  }, [socket, post._id]);
 
   const handleDownvote = async () => {
     if (!account) {
@@ -166,64 +137,74 @@ export function Post({ post }: PostProps) {
     }
   }
 
-  const handleMintNFT = async () => {
+  const handleMintNFTBackend = async () => {
+    setMinting(true);
+    try {
+      const res = await fetch(`/api/nft/mint/${post._id}`, { method: "POST" });
+      const data = await res.json();
+      setNftTokenId(data.tokenId);
+      toast({ title: "NFT Minted!", description: `Token ID: ${data.tokenId}` });
+    } catch (err: any) {
+      toast({ title: "Minting failed", description: err.message || "Failed to mint NFT", variant: "destructive" });
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  const toggleComments = () => {
+    setShowComments(!showComments)
+  }
+
+  const handleUpvote = async () => {
     if (!account) {
       toast({
         title: "Wallet not connected",
-        description: "Please connect your wallet to mint NFTs",
+        description: "Please connect your wallet to upvote posts",
         variant: "destructive",
       })
       return
     }
 
-    if (!isCorrectNetwork) {
-      toast({
-        title: "Wrong Network",
-        description: "Please switch to Sepolia testnet to mint NFTs",
-        variant: "destructive",
-      })
-      try {
-        await switchNetwork(11155111) // Sepolia chain ID
-        return
-      } catch (error) {
-        return
-      }
-    }
-
-    setIsMinting(true)
-    setShowMintingDialog(true)
-    setMintingStatus("pending")
-
+    setIsUpvoting(true)
     try {
-      // Call the mintPost function from context
-      await mintPost(post.id)
-      setMintingStatus("success")
+      // In a real app, this would call a smart contract function
+      // await contract.upvote(post.tokenId)
 
-      // Get the transaction hash from the updated post
-      const updatedPost = posts.find((p) => p.id === post.id)
-      if (updatedPost?.txHash) {
-        setTxHash(updatedPost.txHash)
+      // Simulate blockchain delay
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      if (hasUpvoted) {
+        setUpvotes(upvotes - 1)
+        setHasUpvoted(false)
+      } else {
+        setUpvotes(upvotes + 1)
+        setHasUpvoted(true)
+
+        if (hasDownvoted) {
+          setDownvotes(downvotes - 1)
+          setHasDownvoted(false)
+        }
+        // Emit live reaction
+        if (socket) {
+          socket.emit("react", { postId: post.id, userId: account, reaction: "like" });
+        }
       }
 
       toast({
-        title: "NFT Minted Successfully",
-        description: `Your post has been minted as NFT on the Sepolia network`,
+        title: hasUpvoted ? "Upvote removed" : "Post upvoted",
+        description: hasUpvoted
+          ? "Your upvote has been removed from this post"
+          : "Your upvote has been recorded on the blockchain",
       })
     } catch (error: any) {
-      setMintingStatus("error")
       toast({
-        title: "Minting failed",
-        description: error.message || "Failed to mint NFT",
+        title: "Upvote failed",
+        description: error.message || "Failed to upvote post",
         variant: "destructive",
       })
     } finally {
-      setIsMinting(false)
-      // Dialog will be closed by user clicking "View NFT" or "Close"
+      setIsUpvoting(false)
     }
-  }
-
-  const toggleComments = () => {
-    setShowComments(!showComments)
   }
 
   return (
@@ -317,22 +298,16 @@ export function Post({ post }: PostProps) {
               </a>
             </Button>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto border-primary/50 text-primary hover:bg-primary/10"
-              onClick={handleMintNFT}
-              disabled={isMinting}
-            >
-              {isMinting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  Minting...
-                </>
-              ) : (
-                <>Mint as NFT</>
+            <>
+              {!nftTokenId && (
+                <Button onClick={handleMintNFTBackend} disabled={minting} className="bg-primary text-white mt-2">
+                  {minting ? "Minting..." : "Mint as NFT"}
+                </Button>
               )}
-            </Button>
+              {nftTokenId && (
+                <div className="mt-2 text-xs text-primary">NFT Token ID: {nftTokenId}</div>
+              )}
+            </>
           )}
         </CardFooter>
 

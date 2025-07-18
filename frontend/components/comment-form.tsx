@@ -21,6 +21,8 @@ export function CommentForm({ postId }: CommentFormProps) {
   const { account } = useWeb3()
   const { toast } = useToast()
   const { addComment } = usePosts()
+  const { user } = useWeb3();
+  const userId = user?._id;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,26 +47,14 @@ export function CommentForm({ postId }: CommentFormProps) {
 
     setIsSubmitting(true)
     try {
-      // In a real app, this would call a smart contract or API
-      // Simulate blockchain delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      // Add the comment
-      addComment({
-        id: `comment-${Date.now()}`,
-        postId,
-        content,
-        author: {
-          address: account,
-          username: "crypto_enthusiast", // In a real app, this would be fetched from a profile
-          avatar: "/placeholder.svg?height=50&width=50",
-        },
-        createdAt: new Date().toISOString(),
+      const res = await fetch("/api/comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post: postId, user: userId, content }),
       })
-
-      // Clear the form
+      const newComment = await res.json()
+      // Optionally update UI with new comment (emit event or refetch)
       setContent("")
-
       toast({
         title: "Comment added",
         description: "Your comment has been added successfully",

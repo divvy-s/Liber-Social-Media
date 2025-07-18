@@ -42,7 +42,7 @@ type Web3ContextType = {
   nftContract: any
 }
 
-const Web3Context = createContext<Web3ContextType>({
+export const Web3Context = createContext<Web3ContextType & { user: any }>({
   account: null,
   provider: null,
   signer: null,
@@ -54,7 +54,8 @@ const Web3Context = createContext<Web3ContextType>({
   mintNFT: async () => "",
   isCorrectNetwork: false,
   nftContract: null,
-})
+  user: null,
+});
 
 export const useWeb3 = () => useContext(Web3Context)
 
@@ -65,6 +66,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false)
   const [chainId, setChainId] = useState<number | null>(null)
   const [nftContract, setNftContract] = useState<any>(null)
+  const [user, setUser] = useState<any>(null);
   const { toast } = useToast()
 
   // Check if user is on the correct network (Sepolia)
@@ -173,9 +175,20 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
       const contract = new ethers.Contract(NFT_CONTRACT_ADDRESS, NFT_CONTRACT_ABI, signer)
       setNftContract(contract)
 
+      // Backend authentication
+      const message = `Sign in to Liber at ${new Date().toISOString()}`;
+      const signature = await signer.signMessage(message);
+      const res = await fetch("/api/auth/wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: accounts[0], signature, message }),
+      });
+      const userData = await res.json();
+      setUser(userData);
+
       toast({
         title: "Connected",
-        description: "Your wallet has been connected successfully",
+        description: "Your wallet has been connected and authenticated",
       })
 
       // Check if on Sepolia, if not prompt to switch
@@ -269,24 +282,31 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Fetch user session/profile after login
+  useEffect(() => {
+    if (!account) return;
+    fetch(`/api/auth/me/${account}`)
+      .then((res) => res.json())
+      .then((data) => setUser(data));
+  }, [account]);
+
   return (
-    <Web3Context.Provider
-      value={{
-        account,
-        provider,
-        signer,
-        connect,
-        disconnect,
-        isConnecting,
-        chainId,
-        switchNetwork,
-        mintNFT,
-        isCorrectNetwork,
-        nftContract,
-      }}
-    >
+    <Web3Context.Provider value={{
+      account,
+      provider,
+      signer,
+      connect,
+      disconnect,
+      isConnecting,
+      chainId,
+      switchNetwork,
+      mintNFT,
+      isCorrectNetwork,
+      nftContract,
+      user,
+    }}>
       {children}
     </Web3Context.Provider>
-  )
+  );
 }
 

@@ -20,65 +20,70 @@ const PROFILE_STORAGE_KEY = "liber_profile"
 
 // Default profile data
 const DEFAULT_PROFILE = {
-  username: "crypto_enthusiast",
-  bio: "Web3 developer and blockchain enthusiast. Building the decentralized future one block at a time.",
+  username: "",
+  bio: "",
   avatar: "/placeholder.svg?height=150&width=150",
   banner: "/placeholder.svg?height=300&width=1200",
-  followers: 128,
-  following: 87,
-  tokenId: "42",
-  links: [
-    { type: "website", url: "https://example.com", label: "example.com" },
-    { type: "twitter", url: "https://twitter.com/example", label: "@example" },
-  ],
-}
+  followers: 0,
+  following: 0,
+  tokenId: "",
+  links: [],
+};
 
 export default function ProfilePage() {
-  const { account } = useWeb3()
-  const [activeTab, setActiveTab] = useState("posts")
-  const [profile, setProfile] = useState(DEFAULT_PROFILE)
+  const { user } = useWeb3();
+  const userId = user?._id;
+  const [activeTab, setActiveTab] = useState("posts");
+  const [profile, setProfile] = useState(DEFAULT_PROFILE);
+  const [loading, setLoading] = useState(false);
+  const [userNFTs, setUserNFTs] = useState<any[]>([]);
 
-  // Load profile data from localStorage on initial render
+  // Fetch profile from backend
   useEffect(() => {
-    const loadProfile = () => {
-      try {
-        const savedProfile = localStorage.getItem(PROFILE_STORAGE_KEY)
-        if (savedProfile) {
-          setProfile(JSON.parse(savedProfile))
-        }
-      } catch (error) {
-        console.error("Failed to load profile from localStorage:", error)
-      }
-    }
+    if (!userId) return;
+    setLoading(true);
+    fetch(`/api/user/${userId}`)
+      .then((res) => res.json())
+      .then((data) => setProfile({
+        ...DEFAULT_PROFILE,
+        ...data,
+        followers: data.followers?.length || 0,
+        following: data.following?.length || 0,
+      }))
+      .finally(() => setLoading(false));
+  }, [userId]);
 
-    // Use setTimeout to avoid hydration issues
-    const timer = setTimeout(() => {
-      loadProfile()
-    }, 0)
-
-    return () => clearTimeout(timer)
-  }, [])
-
-  // Save profile data to localStorage whenever it changes
+  // Fetch user NFTs
   useEffect(() => {
-    try {
-      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
-    } catch (error) {
-      console.error("Failed to save profile to localStorage:", error)
-    }
-  }, [profile])
+    if (!userId) return;
+    fetch(`/api/nft/user/${userId}`)
+      .then((res) => res.json())
+      .then((data) => setUserNFTs(data));
+  }, [userId]);
 
-  const handleProfileUpdate = (updatedProfile: {
-    username: string
-    bio: string
-    avatar: string
-    banner: string
+  // Update profile in backend
+  const handleProfileUpdate = async (updatedProfile: {
+    username: string;
+    bio: string;
+    avatar: string;
+    banner: string;
   }) => {
+    if (!userId) return;
+    setLoading(true);
+    const res = await fetch(`/api/user/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedProfile),
+    });
+    const data = await res.json();
     setProfile({
       ...profile,
-      ...updatedProfile,
-    })
-  }
+      ...data,
+      followers: data.followers?.length || 0,
+      following: data.following?.length || 0,
+    });
+    setLoading(false);
+  };
 
   const linkIcons = {
     website: Globe,
@@ -89,11 +94,13 @@ export default function ProfilePage() {
     <PostProvider>
       <ProfileContent
         profile={profile}
-        account={account}
+        account={userId}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         linkIcons={linkIcons}
         onProfileUpdate={handleProfileUpdate}
+        loading={loading}
+        userNFTs={userNFTs}
       />
     </PostProvider>
   )
@@ -106,6 +113,8 @@ function ProfileContent({
   setActiveTab,
   linkIcons,
   onProfileUpdate,
+  loading,
+  userNFTs,
 }: {
   profile: any
   account: string | null
@@ -113,6 +122,8 @@ function ProfileContent({
   setActiveTab: (tab: string) => void
   linkIcons: any
   onProfileUpdate: (profile: any) => void
+  loading: boolean;
+  userNFTs: any[];
 }) {
   const { userPosts } = usePosts()
 
@@ -246,30 +257,33 @@ function ProfileContent({
                   </Card>
                 </TabsContent>
                 <TabsContent value="nfts">
-                  {nftCount > 0 ? (
+                  {userNFTs.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {userPosts.map((post) => (
-                        <Card key={post.id} className="border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden">
-                          <CardHeader className="p-4 pb-0">
-                            <div className="flex justify-between items-center">
-                              <CardTitle className="text-md">{post.title}</CardTitle>
-                              <Badge variant="outline" className="border-primary/50 text-primary neon-text">
-                                NFT #{post.tokenId}
-                              </Badge>
-                            </div>
+                      {userNFTs.map((nft) => (
+                        <Card key={nft._id} className="border-primary/50">
+                          <CardHeader>
+                            <CardTitle>NFT Token ID: {nft.nftTokenId}</CardTitle>
                           </CardHeader>
-                          <CardContent className="p-4">
-                            <p className="text-sm text-muted-foreground line-clamp-2">{post.content}</p>
-                            <div className="mt-2 text-xs text-muted-foreground">
-                              Minted: {new Date(post.createdAt).toLocaleDateString()}
+                          <CardContent>
+                            <div className="mb-2">
+                              <img src={nft.image || "/placeholder.svg"} alt="NFT" className="w-full h-40 object-cover rounded" />
                             </div>
+                            <div className="text-sm text-muted-foreground mb-2">{nft.content}</div>
+                            <a
+                              href={`https://opensea.io/assets/ethereum/${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}/${nft.nftTokenId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary underline"
+                            >
+                              View on OpenSea
+                            </a>
                           </CardContent>
                         </Card>
                       ))}
                     </div>
                   ) : (
                     <Card className="border-border/50 bg-card/50 backdrop-blur-sm p-8 text-center">
-                      <p className="text-muted-foreground">No NFTs yet</p>
+                      <p className="text-muted-foreground">No NFTs minted yet</p>
                     </Card>
                   )}
                 </TabsContent>

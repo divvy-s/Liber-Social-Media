@@ -8,6 +8,10 @@ router.post('/', async (req, res) => {
   try {
     const post = new Post({ user, content, image, nftTokenId, ipfsHash });
     await post.save();
+    // Emit live feed update
+    if (req.app.emitFeedEvent) {
+      req.app.emitFeedEvent('newPost', post);
+    }
     res.json(post);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -45,6 +49,10 @@ router.post('/:id/like', async (req, res) => {
     if (!post.likes.includes(userId)) {
       post.likes.push(userId);
       await post.save();
+      // Emit live feed update
+      if (req.app.emitFeedEvent) {
+        req.app.emitFeedEvent('postLiked', { postId: post._id, userId });
+      }
     }
     res.json(post);
   } catch (err) {
