@@ -6,6 +6,7 @@ const postSchema = new mongoose.Schema({
   image: { type: String },
   nftTokenId: { type: String },
   ipfsHash: { type: String },
+  likes: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [] },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Post', postSchema); 
