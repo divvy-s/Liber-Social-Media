@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { MainNav } from "@/components/main-nav"
 import { WalletConnect } from "@/components/wallet-connect"
 import { useWeb3 } from "@/components/web3-provider"
@@ -44,6 +45,7 @@ export default function PublicProfilePage() {
   const [loading, setLoading] = useState(true)
   const [bannerCacheBust, setBannerCacheBust] = useState(0)
   const [isFollowLoading, setIsFollowLoading] = useState(false)
+  const router = useRouter();
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -163,6 +165,11 @@ export default function PublicProfilePage() {
     }
   }
 
+  const handleSendDM = () => {
+    if (!address) return;
+    router.push(`/messages?to=${address}`);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -223,6 +230,18 @@ export default function PublicProfilePage() {
                   disabled={isFollowLoading}
                 >
                   {isFollowLoading ? (isFollowing ? "Unfollowing..." : "Following...") : isFollowing ? "Unfollow" : "Follow"}
+                </Button>
+              )}
+              {/* Send DM button for non-own profiles */}
+              {!isOwnProfile && account && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-background/80 backdrop-blur-sm"
+                  onClick={handleSendDM}
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Send DM
                 </Button>
               )}
               <Button variant="outline" size="sm" className="bg-background/80 backdrop-blur-sm" asChild>

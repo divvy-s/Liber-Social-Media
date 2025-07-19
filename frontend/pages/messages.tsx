@@ -8,26 +8,30 @@ import { PostProvider } from "@/components/post-context"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { formatDistanceToNow } from "date-fns"
 import { Send, Search, Loader2 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useWeb3 } from "@/components/web3-provider"
+import { io, Socket } from "socket.io-client"
+import { useRouter } from "next/router";
 
 export default function MessagesPage() {
-  const { account } = useWeb3()
+  const { account, userProfile } = useWeb3()
+  const router = useRouter()
   const [conversations, setConversations] = useState<any[]>([])
   const [activeConversation, setActiveConversation] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
   const [messages, setMessages] = useState<any[]>([])
   const [messageInput, setMessageInput] = useState("")
   const [sending, setSending] = useState(false)
+  const socketRef = useRef<Socket | null>(null)
 
   // Fetch conversations from backend
   useEffect(() => {
     const fetchConversations = async () => {
-      if (!account) return
+      if (!userProfile?._id) return
       setLoading(true)
       try {
         const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
-        const res = await fetch(`${apiBaseUrl}/api/message/conversations/${account}`)
+        const res = await fetch(`${apiBaseUrl}/api/message/conversations/${userProfile._id}`)
         if (res.ok) {
           const users = await res.json()
           setConversations(users)
@@ -37,15 +41,44 @@ export default function MessagesPage() {
       setLoading(false)
     }
     fetchConversations()
-  }, [account])
+  }, [userProfile?._id])
+
+  // Pre-select conversation if 'to' query param is present
+  useEffect(() => {
+    if (!router.isReady) return;
+    const to = router.query.to as string | undefined;
+    if (to) {
+      const found = conversations.find((user) => user._id?.toLowerCase() === to.toLowerCase() || user.walletAddress?.toLowerCase() === to.toLowerCase());
+      if (found) {
+        setActiveConversation(found);
+      } else {
+        // Fetch user by address and add to conversations (prevent duplicates)
+        const fetchUser = async () => {
+          try {
+            const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+            const res = await fetch(`${apiBaseUrl}/api/users/${to}`);
+            if (res.ok) {
+              const user = await res.json();
+              setConversations((prev) => {
+                if (prev.some((u) => u._id === user._id)) return prev;
+                return [...prev, user];
+              });
+              setActiveConversation(user);
+            }
+          } catch (error) {}
+        };
+        fetchUser();
+      }
+    }
+  }, [router.isReady, router.query.to, conversations]);
 
   // Fetch messages for the active conversation
   useEffect(() => {
     const fetchMessages = async () => {
-      if (!account || !activeConversation) return
+      if (!userProfile?._id || !activeConversation?._id) return
       try {
         const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
-        const res = await fetch(`${apiBaseUrl}/api/message/conversation/${account}/${activeConversation._id}`)
+        const res = await fetch(`${apiBaseUrl}/api/message/conversation/${userProfile._id}/${activeConversation._id}`)
         if (res.ok) {
           const msgs = await res.json()
           setMessages(msgs)
@@ -53,20 +86,56 @@ export default function MessagesPage() {
       } catch (error) {}
     }
     fetchMessages()
-  }, [account, activeConversation])
+  }, [userProfile?._id, activeConversation?._id])
+
+  // Connect to Socket.IO server
+  useEffect(() => {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000"
+    const socket = io(apiBaseUrl, {
+      withCredentials: true
+    })
+    socketRef.current = socket
+
+    // Listen for incoming messages
+    socket.on("receive_message", (msg) => {
+      setMessages((prev) => [...prev, msg])
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [])
+
+  // Identify user to the server when socket or account changes
+  useEffect(() => {
+    if (socketRef.current && userProfile?._id) {
+      socketRef.current.emit("identify", userProfile._id)
+    }
+  }, [userProfile?._id])
 
   // Send a message
+  const sendingRef = useRef(false); // Defensive check
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!account || !activeConversation || !messageInput.trim()) return
+    if (sendingRef.current) return; // Prevent double submit
+    if (!userProfile || !activeConversation || !messageInput.trim()) return
     setSending(true)
+    sendingRef.current = true;
     try {
+      console.log("Active Conversation:", activeConversation);
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+      // Only allow sending if _id is present
+      if (!activeConversation._id) {
+        alert('Cannot send message: user not found or invalid recipient.');
+        setSending(false)
+        sendingRef.current = false;
+        return
+      }
       const res = await fetch(`${apiBaseUrl}/api/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sender: account,
+          sender: userProfile._id,
           recipient: activeConversation._id,
           content: messageInput.trim(),
         })
@@ -75,10 +144,20 @@ export default function MessagesPage() {
         const newMsg = await res.json()
         setMessages((prev) => [...prev, newMsg])
         setMessageInput("")
+        // Emit the message to the server for real-time delivery
+        if (socketRef.current) {
+          socketRef.current.emit("send_message", newMsg)
+        }
       }
     } catch (error) {}
     setSending(false)
+    sendingRef.current = false;
   }
+
+  // Deduplicate messages by _id before rendering
+  const uniqueMessages = Array.from(
+    new Map(messages.map(msg => [msg._id, msg])).values()
+  );
 
   return (
     <PostProvider>
@@ -154,11 +233,11 @@ export default function MessagesPage() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((message: any) => (
-                  <div key={message._id} className={`flex ${message.sender === account ? "justify-end" : "justify-start"}`}>
+                {uniqueMessages.map((message: any) => (
+                  <div key={message._id} className={`flex ${message.sender === userProfile?._id ? "justify-end" : "justify-start"}`}>
                     <div
                       className={`max-w-[70%] p-3 rounded-lg ${
-                        message.sender === account ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+                        message.sender === userProfile?._id ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
                       }`}
                     >
                       <p>{message.content}</p>
@@ -192,5 +271,4 @@ export default function MessagesPage() {
       </div>
     </PostProvider>
   )
-}
-
+} 
