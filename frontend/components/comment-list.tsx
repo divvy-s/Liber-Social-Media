@@ -2,91 +2,102 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { formatDistanceToNow } from "date-fns"
-import { useSocket } from "@/components/socket-context";
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { useWeb3 } from "@/components/web3-provider";
+import { useEffect, useState } from "react"
+import { usePosts } from "@/components/post-context"
+import { ChevronDown, ChevronUp } from "lucide-react"
+import { CommentForm } from "@/components/comment-form"
 
 interface CommentListProps {
   postId: string
+  autoExpand?: boolean // If true, start expanded
 }
 
-export function CommentList({ postId }: CommentListProps) {
-  const [comments, setComments] = useState<any[]>([]);
-  const socket = useSocket();
-  const [commentLikes, setCommentLikes] = useState<{ [key: string]: number }>({});
-  const { user } = useWeb3();
-  const userId = user?._id;
+export function CommentList({ postId, autoExpand = false }: CommentListProps) {
+  const { getPostComments, fetchPostComments } = usePosts()
+  const [expanded, setExpanded] = useState(autoExpand)
+  const [loading, setLoading] = useState(false)
+  const [hasAutoExpanded, setHasAutoExpanded] = useState(false)
+  const comments = getPostComments(postId)
 
-  // Fetch comments from backend
-  useEffect(() => {
-    fetch(`/api/comment/post/${postId}`)
-      .then((res) => res.json())
-      .then((data) => setComments(data));
-  }, [postId]);
-
-  useEffect(() => {
-    if (!socket) return;
-    const handleReaction = ({ commentId, userId, reaction }) => {
-      if (reaction === "like" && commentId) {
-        setCommentLikes((prev) => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 }));
-      }
-    };
-    socket.on("reaction", handleReaction);
-    return () => {
-      socket.off("reaction", handleReaction);
-    };
-  }, [socket]);
-
-  const handleLike = (commentId: string) => {
-    if (socket && userId) {
-      socket.emit("react", { commentId, userId, reaction: "like" });
-      setCommentLikes((prev) => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 }));
+  // Sort comments by upvotes if available, else by recency
+  const sortedComments = [...comments].sort((a, b) => {
+    if (typeof b.upvotes === 'number' && typeof a.upvotes === 'number') {
+      return b.upvotes - a.upvotes
     }
-  };
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  })
 
-  // Delete comment
-  const handleDelete = async (commentId: string) => {
-    await fetch(`/api/comment/${commentId}`, { method: "DELETE" });
-    setComments((prev) => prev.filter((c) => c._id !== commentId));
-  };
+  // Fetch comments when component mounts
+  useEffect(() => {
+    setLoading(true)
+    fetchPostComments(postId).finally(() => setLoading(false))
+  }, [postId, fetchPostComments])
 
-  if (comments.length === 0) {
-    return (
-      <div className="text-center py-4">
-        <p className="text-muted-foreground">No comments yet. Be the first to comment!</p>
-      </div>
-    )
+  // Auto-expand only once when comments are first loaded
+  useEffect(() => {
+    if (comments.length > 0 && !expanded && !hasAutoExpanded) {
+      setExpanded(true)
+      setHasAutoExpanded(true)
+    }
+  }, [comments.length, expanded, hasAutoExpanded])
+
+  const handleToggle = () => {
+    setExpanded(!expanded)
   }
 
   return (
-    <div className="space-y-4 mt-4">
-      {comments.map((comment) => (
-        <div key={comment._id} className="flex gap-3 items-start">
-          <Avatar className="w-8 h-8">
-            <AvatarImage src={comment.user?.avatar || "/placeholder.svg"} alt={comment.user?.username} />
-            <AvatarFallback>{comment.user?.username?.slice(0, 2).toUpperCase() || "U"}</AvatarFallback>
-          </Avatar>
-          <div className="flex-1 bg-muted p-3 rounded-lg">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-medium">@{comment.user?.username || "Unknown"}</span>
-              <span className="text-xs text-muted-foreground">
-                {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
-              </span>
-              <Button size="sm" variant="ghost" onClick={() => handleLike(comment._id)} className="ml-auto">
-                👍 {commentLikes[comment._id] || 0}
-              </Button>
-              {/* Show delete button if user is the author */}
-              {comment.user?._id === userId && (
-                <Button size="sm" variant="destructive" onClick={() => handleDelete(comment._id)} className="ml-2">
-                  Delete
-                </Button>
-              )}
-            </div>
-            <p className="text-sm">{comment.content}</p>
-          </div>
+    <div className="border-t border-border/40 bg-muted/20">
+      {/* Header with arrow */}
+      <div 
+        className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/30 transition-colors"
+        onClick={handleToggle}
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-sm">Comments</span>
+          <span className="text-xs text-muted-foreground">({comments.length})</span>
         </div>
-      ))}
+        {expanded ? (
+          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        )}
+      </div>
+
+      {/* Comments content */}
+      {expanded && (
+        <div className="px-3 pb-3">
+          {/* Comment form */}
+          <div className="mb-4">
+            <CommentForm postId={postId} />
+          </div>
+          
+          {loading ? (
+            <div className="text-center py-4 text-muted-foreground">Loading comments...</div>
+          ) : comments.length === 0 ? (
+            <div className="text-center py-4 text-muted-foreground">No comments yet. Be the first to comment!</div>
+          ) : (
+            <div className="space-y-3">
+              {sortedComments.map((comment) => (
+                <div key={comment.id} className="flex gap-3">
+                  <Avatar className="w-8 h-8">
+                    <AvatarImage src={comment.author.avatar} alt={comment.author.username} />
+                    <AvatarFallback>{comment.author.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 bg-background/50 p-3 rounded-lg border border-border/30">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-sm">@{comment.author.username}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+                      </span>
+                    </div>
+                    <p className="text-sm">{comment.content}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

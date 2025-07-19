@@ -21,7 +21,14 @@ router.post('/mint/:postId', async (req, res) => {
 // Get all NFTs (posts with nftTokenId) for a user
 router.get('/user/:userId', async (req, res) => {
   try {
-    const posts = await Post.find({ user: req.params.userId, nftTokenId: { $exists: true, $ne: '' } });
+    // If userId is a wallet address, look up the user
+    let user = await User.findOne({ walletAddress: req.params.userId });
+    if (!user) {
+      // Try as ObjectId fallback
+      user = await User.findById(req.params.userId);
+    }
+    if (!user) return res.json([]);
+    const posts = await Post.find({ user: user._id, nftTokenId: { $exists: true, $ne: '' } });
     res.json(posts);
   } catch (err) {
     res.status(500).json({ error: err.message });

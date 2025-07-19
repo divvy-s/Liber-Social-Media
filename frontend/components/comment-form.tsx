@@ -21,8 +21,6 @@ export function CommentForm({ postId }: CommentFormProps) {
   const { account } = useWeb3()
   const { toast } = useToast()
   const { addComment } = usePosts()
-  const { user } = useWeb3();
-  const userId = user?._id;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,14 +45,51 @@ export function CommentForm({ postId }: CommentFormProps) {
 
     setIsSubmitting(true)
     try {
-      const res = await fetch("/api/comment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ post: postId, user: userId, content }),
-      })
-      const newComment = await res.json()
-      // Optionally update UI with new comment (emit event or refetch)
+      // Fetch the user's ObjectId from the backend
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const userRes = await fetch(`${apiBaseUrl}/api/users/${account}`);
+      if (!userRes.ok) throw new Error('Failed to fetch user info');
+      const userData = await userRes.json();
+      const userId = userData._id;
+
+      // Prepare the comment data to send to the backend
+      const commentPayload = {
+        post: postId,
+        user: userId,
+        content,
+      }
+
+      // Send POST request to backend
+      const res = await fetch(`${apiBaseUrl}/api/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(commentPayload),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to add comment on backend');
+      }
+
+      const createdComment = await res.json();
+      
+      // Transform the backend comment to match frontend Comment interface
+      const transformedComment = {
+        id: createdComment._id || createdComment.id,
+        postId: createdComment.post,
+        content: createdComment.content,
+        author: {
+          address: userData.walletAddress || account,
+          username: userData.username || "User",
+          avatar: userData.avatar || "/placeholder.svg",
+        },
+        createdAt: createdComment.createdAt,
+      };
+      
+      addComment(transformedComment);
+
+      // Clear the form
       setContent("")
+
       toast({
         title: "Comment added",
         description: "Your comment has been added successfully",

@@ -14,8 +14,7 @@ import { CommentForm } from "@/components/comment-form"
 import { CommentList } from "@/components/comment-list"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import Image from "next/image"
-import { useSocket } from "@/components/socket-context";
-import { useEffect } from "react";
+import Link from "next/link"
 
 interface PostProps {
   post: PostType
@@ -38,23 +37,68 @@ export function Post({ post }: PostProps) {
   const [mintingStatus, setMintingStatus] = useState<"pending" | "success" | "error">("pending")
   const [showImageModal, setShowImageModal] = useState(false)
   const [txHash, setTxHash] = useState<string | null>(post.txHash || null)
-  const socket = useSocket();
-  const [nftTokenId, setNftTokenId] = useState(post.nftTokenId || "");
-  const [minting, setMinting] = useState(false);
 
-  // Listen for live reactions
-  useEffect(() => {
-    if (!socket) return;
-    const handleReaction = ({ postId, userId, reaction }) => {
-      if (postId === post._id && reaction === "like") {
-        setUpvotes((prev) => prev + 1);
-      }
-    };
-    socket.on("reaction", handleReaction);
-    return () => {
-      socket.off("reaction", handleReaction);
-    };
-  }, [socket, post._id]);
+  const handleUpvote = async () => {
+    if (!account) {
+      toast({
+        title: "Wallet not connected",
+        description: "Please connect your wallet to upvote posts",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsUpvoting(true)
+    try {
+      // Fetch the user's ObjectId from the backend
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const userRes = await fetch(`${apiBaseUrl}/api/users/${account}`);
+      if (!userRes.ok) throw new Error('Failed to fetch user info');
+      const userData = await userRes.json();
+      const userId = userData._id;
+
+      // Call backend upvote route
+      const res = await fetch(`${apiBaseUrl}/api/posts/${post.id}/upvote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!res.ok) throw new Error('Failed to upvote post');
+      const updatedPost = await res.json();
+
+      // Update local state with backend response
+      setUpvotes(updatedPost.upvotes || 0);
+      setDownvotes(updatedPost.downvotes || 0);
+      
+      // Update user interaction state
+      const hasUpvoted = updatedPost.upvotedBy?.includes(userId);
+      const hasDownvoted = updatedPost.downvotedBy?.includes(userId);
+      setHasUpvoted(hasUpvoted);
+      setHasDownvoted(hasDownvoted);
+
+      // Update the post in the context
+      updatePost(post.id, {
+        upvotes: updatedPost.upvotes || 0,
+        downvotes: updatedPost.downvotes || 0,
+      });
+
+      toast({
+        title: hasUpvoted ? "Upvote removed" : "Post upvoted",
+        description: hasUpvoted
+          ? "Your upvote has been removed from this post"
+          : "Your upvote has been recorded",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Upvote failed",
+        description: error.message || "Failed to upvote post",
+        variant: "destructive",
+      })
+    } finally {
+      setIsUpvoting(false)
+    }
+  }
 
   const handleDownvote = async () => {
     if (!account) {
@@ -68,30 +112,44 @@ export function Post({ post }: PostProps) {
 
     setIsDownvoting(true)
     try {
-      // In a real app, this would call a smart contract function
-      // await contract.downvote(post.tokenId)
+      // Fetch the user's ObjectId from the backend
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const userRes = await fetch(`${apiBaseUrl}/api/users/${account}`);
+      if (!userRes.ok) throw new Error('Failed to fetch user info');
+      const userData = await userRes.json();
+      const userId = userData._id;
 
-      // Simulate blockchain delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // Call backend downvote route
+      const res = await fetch(`${apiBaseUrl}/api/posts/${post.id}/downvote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
 
-      if (hasDownvoted) {
-        setDownvotes(downvotes - 1)
-        setHasDownvoted(false)
-      } else {
-        setDownvotes(downvotes + 1)
-        setHasDownvoted(true)
+      if (!res.ok) throw new Error('Failed to downvote post');
+      const updatedPost = await res.json();
 
-        if (hasUpvoted) {
-          setUpvotes(upvotes - 1)
-          setHasUpvoted(false)
-        }
-      }
+      // Update local state with backend response
+      setUpvotes(updatedPost.upvotes || 0);
+      setDownvotes(updatedPost.downvotes || 0);
+      
+      // Update user interaction state
+      const hasUpvoted = updatedPost.upvotedBy?.includes(userId);
+      const hasDownvoted = updatedPost.downvotedBy?.includes(userId);
+      setHasUpvoted(hasUpvoted);
+      setHasDownvoted(hasDownvoted);
+
+      // Update the post in the context
+      updatePost(post.id, {
+        upvotes: updatedPost.upvotes || 0,
+        downvotes: updatedPost.downvotes || 0,
+      });
 
       toast({
         title: hasDownvoted ? "Downvote removed" : "Post downvoted",
         description: hasDownvoted
           ? "Your downvote has been removed from this post"
-          : "Your downvote has been recorded on the blockchain",
+          : "Your downvote has been recorded",
       })
     } catch (error: any) {
       toast({
@@ -119,8 +177,20 @@ export function Post({ post }: PostProps) {
       // Copy the URL to clipboard
       await navigator.clipboard.writeText(`https://liber.com/post/${post.id}`)
 
-      // Increment share count
-      incrementShareCount(post.id)
+      // Call backend share route
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const res = await fetch(`${apiBaseUrl}/api/posts/${post.id}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!res.ok) throw new Error('Failed to share post');
+      const updatedPost = await res.json();
+
+      // Update the post in the context
+      updatePost(post.id, {
+        shareCount: updatedPost.shares || 0,
+      });
 
       toast({
         title: "Post shared",
@@ -137,73 +207,59 @@ export function Post({ post }: PostProps) {
     }
   }
 
-  const handleMintNFTBackend = async () => {
-    setMinting(true);
-    try {
-      const res = await fetch(`/api/nft/mint/${post._id}`, { method: "POST" });
-      const data = await res.json();
-      setNftTokenId(data.tokenId);
-      toast({ title: "NFT Minted!", description: `Token ID: ${data.tokenId}` });
-    } catch (err: any) {
-      toast({ title: "Minting failed", description: err.message || "Failed to mint NFT", variant: "destructive" });
-    } finally {
-      setMinting(false);
-    }
-  };
-
-  const toggleComments = () => {
-    setShowComments(!showComments)
-  }
-
-  const handleUpvote = async () => {
+  const handleMintNFT = async () => {
     if (!account) {
       toast({
         title: "Wallet not connected",
-        description: "Please connect your wallet to upvote posts",
+        description: "Please connect your wallet to mint NFTs",
         variant: "destructive",
       })
       return
     }
 
-    setIsUpvoting(true)
+    if (!isCorrectNetwork) {
+      toast({
+        title: "Wrong Network",
+        description: "Please switch to Sepolia testnet to mint NFTs",
+        variant: "destructive",
+      })
+      try {
+        await switchNetwork(11155111) // Sepolia chain ID
+        return
+      } catch (error) {
+        return
+      }
+    }
+
+    setIsMinting(true)
+    setShowMintingDialog(true)
+    setMintingStatus("pending")
+
     try {
-      // In a real app, this would call a smart contract function
-      // await contract.upvote(post.tokenId)
+      // Call the mintPost function from context
+      await mintPost(post.id)
+      setMintingStatus("success")
 
-      // Simulate blockchain delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      if (hasUpvoted) {
-        setUpvotes(upvotes - 1)
-        setHasUpvoted(false)
-      } else {
-        setUpvotes(upvotes + 1)
-        setHasUpvoted(true)
-
-        if (hasDownvoted) {
-          setDownvotes(downvotes - 1)
-          setHasDownvoted(false)
-        }
-        // Emit live reaction
-        if (socket) {
-          socket.emit("react", { postId: post.id, userId: account, reaction: "like" });
-        }
+      // Get the transaction hash from the updated post
+      const updatedPost = posts.find((p) => p.id === post.id)
+      if (updatedPost?.txHash) {
+        setTxHash(updatedPost.txHash)
       }
 
       toast({
-        title: hasUpvoted ? "Upvote removed" : "Post upvoted",
-        description: hasUpvoted
-          ? "Your upvote has been removed from this post"
-          : "Your upvote has been recorded on the blockchain",
+        title: "NFT Minted Successfully",
+        description: `Your post has been minted as NFT on the Sepolia network`,
       })
     } catch (error: any) {
+      setMintingStatus("error")
       toast({
-        title: "Upvote failed",
-        description: error.message || "Failed to upvote post",
+        title: "Minting failed",
+        description: error.message || "Failed to mint NFT",
         variant: "destructive",
       })
     } finally {
-      setIsUpvoting(false)
+      setIsMinting(false)
+      // Dialog will be closed by user clicking "View NFT" or "Close"
     }
   }
 
@@ -214,11 +270,11 @@ export function Post({ post }: PostProps) {
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-3">
               <Avatar>
-                <AvatarImage src={post.author.avatar} alt={post.author.username} />
-                <AvatarFallback>{post.author.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                <AvatarImage src={post.author?.avatar || "/placeholder.svg"} alt={post.author?.username || "User"} />
+                <AvatarFallback>{post.author?.username ? post.author.username.slice(0, 2).toUpperCase() : "US"}</AvatarFallback>
               </Avatar>
               <div>
-                <div className="font-medium">@{post.author.username}</div>
+                <div className="font-medium">@{post.author?.username || "User"}</div>
                 <div className="text-xs text-muted-foreground">
                   {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
                 </div>
@@ -236,7 +292,9 @@ export function Post({ post }: PostProps) {
           </div>
         </CardHeader>
         <CardContent className="p-4">
-          <h3 className="text-lg font-semibold mb-2">{post.title}</h3>
+          <Link href={`/posts/${post.id}`}>
+            <h3 className="text-lg font-semibold mb-2 hover:text-primary transition-colors cursor-pointer">{post.title}</h3>
+          </Link>
           <p className="text-muted-foreground mb-4">{post.content}</p>
 
           {/* Display image if present */}
@@ -277,10 +335,6 @@ export function Post({ post }: PostProps) {
               {downvotes}
             </Button>
           </div>
-          <Button variant="ghost" size="sm" onClick={toggleComments}>
-            <MessageSquare className="h-5 w-5 mr-1" />
-            {post.commentCount} Comments
-          </Button>
           <Button variant="ghost" size="sm" onClick={handleShare} disabled={isSharing}>
             {isSharing ? <Loader2 className="h-5 w-5 mr-1 animate-spin" /> : <Share2 className="h-5 w-5 mr-1" />}
             {post.shareCount} Shares
@@ -298,25 +352,24 @@ export function Post({ post }: PostProps) {
               </a>
             </Button>
           ) : (
-            <>
-              {!nftTokenId && (
-                <Button onClick={handleMintNFTBackend} disabled={minting} className="bg-primary text-white mt-2">
-                  {minting ? "Minting..." : "Mint as NFT"}
-                </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto border-primary/50 text-primary hover:bg-primary/10"
+              onClick={handleMintNFT}
+              disabled={isMinting}
+            >
+              {isMinting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Minting...
+                </>
+              ) : (
+                <>Mint as NFT</>
               )}
-              {nftTokenId && (
-                <div className="mt-2 text-xs text-primary">NFT Token ID: {nftTokenId}</div>
-              )}
-            </>
+            </Button>
           )}
         </CardFooter>
-
-        {showComments && (
-          <div className="border-t border-border/40 p-4">
-            <CommentForm postId={post.id} />
-            <CommentList postId={post.id} />
-          </div>
-        )}
       </Card>
 
       {/* Minting Dialog */}
@@ -396,7 +449,7 @@ export function Post({ post }: PostProps) {
             <div className="p-4">
               <h3 className="text-lg font-semibold">{post.title}</h3>
               <p className="text-sm text-muted-foreground">
-                Posted by @{post.author.username} • {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
+                Posted by @{post.author?.username} • {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
               </p>
             </div>
           </DialogContent>

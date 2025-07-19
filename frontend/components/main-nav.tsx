@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Home, User, Bell, MessageSquare, Search } from "lucide-react"
+import { Home, User, Bell, MessageSquare, Search, TrendingUp, Hash } from "lucide-react"
 
 export function MainNav() {
   const pathname = usePathname()
@@ -20,6 +20,18 @@ export function MainNav() {
       label: "Explore",
       icon: Search,
       active: pathname === "/explore",
+    },
+    {
+      href: "/trending-users",
+      label: "Trending Users",
+      icon: TrendingUp,
+      active: pathname === "/trending-users",
+    },
+    {
+      href: "/trending-hashtags",
+      label: "Trending Hashtags",
+      icon: Hash,
+      active: pathname === "/trending-hashtags",
     },
     {
       href: "/notifications",

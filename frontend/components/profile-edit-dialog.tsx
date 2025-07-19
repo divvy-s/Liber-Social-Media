@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2, ImageIcon, X } from "lucide-react"
@@ -19,6 +19,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { RadioGroup } from "@/components/ui/radio-group"
+import { useWeb3 } from "@/components/web3-provider"
 
 interface ProfileEditDialogProps {
   profile: {
@@ -46,28 +48,84 @@ export function ProfileEditDialog({ profile, onSave, trigger }: ProfileEditDialo
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const bannerInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  const { account, setUserProfile } = useWeb3()
+  const [avatarUploadMethod, setAvatarUploadMethod] = useState<'cloudinary' | 'ipfs'>('cloudinary')
+  const [bannerUploadMethod, setBannerUploadMethod] = useState<'cloudinary' | 'ipfs'>('cloudinary')
+
+  // Sync local state with profile prop when modal opens or profile changes
+  useEffect(() => {
+    if (isOpen) {
+      setUsername(profile.username)
+      setBio(profile.bio)
+      setAvatarUrl(profile.avatar)
+      setBannerUrl(profile.banner)
+    }
+  }, [isOpen, profile])
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0]
     if (file) {
-      const formData = new FormData();
-      formData.append("image", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      setAvatarUrl(data.url);
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+        const formData = new FormData()
+        formData.append('image', file)
+        let endpoint = '/api/upload'
+        let urlKey = 'url'
+        if (avatarUploadMethod === 'ipfs') {
+          formData.delete('image')
+          formData.append('file', file)
+          endpoint = '/api/ipfs'
+          urlKey = 'url'
+        }
+        const res = await fetch(`${apiBaseUrl}${endpoint}`, {
+          method: 'POST',
+          body: formData,
+        })
+        if (!res.ok) throw new Error('Failed to upload image')
+        const data = await res.json()
+        setAvatarUrl(data[urlKey])
+      } catch (error) {
+        toast({
+          title: 'Avatar upload failed',
+          description: (error as any).message || 'Could not upload avatar',
+          variant: 'destructive',
+        })
+      }
     }
-  };
+  }
 
   const handleBannerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files?.[0]
     if (file) {
-      const formData = new FormData();
-      formData.append("image", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      setBannerUrl(data.url);
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+        const formData = new FormData()
+        formData.append('image', file)
+        let endpoint = '/api/upload'
+        let urlKey = 'url'
+        if (bannerUploadMethod === 'ipfs') {
+          formData.delete('image')
+          formData.append('file', file)
+          endpoint = '/api/ipfs'
+          urlKey = 'url'
+        }
+        const res = await fetch(`${apiBaseUrl}${endpoint}`, {
+          method: 'POST',
+          body: formData,
+        })
+        if (!res.ok) throw new Error('Failed to upload image')
+        const data = await res.json()
+        console.log('Banner upload response:', data)
+        setBannerUrl(data[urlKey])
+      } catch (error) {
+        toast({
+          title: 'Banner upload failed',
+          description: (error as any).message || 'Could not upload banner',
+          variant: 'destructive',
+        })
+      }
     }
-  };
+  }
 
   const removeAvatar = () => {
     setAvatarUrl("/placeholder.svg?height=150&width=150")
@@ -97,23 +155,28 @@ export function ProfileEditDialog({ profile, onSave, trigger }: ProfileEditDialo
 
     setIsSubmitting(true)
     try {
-      // In a real app, this would call an API to update the profile
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      // Save the updated profile
-      onSave({
-        username,
-        bio,
-        avatar: avatarUrl,
-        banner: bannerUrl,
+      // Send profile update to backend
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+      const res = await fetch(`${apiBaseUrl}/api/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: account,
+          username,
+          bio,
+          avatar: avatarUrl,
+          banner: bannerUrl,
+        })
       })
-
+      if (!res.ok) throw new Error('Failed to update profile on backend')
+      const updatedProfile = await res.json()
+      console.log('Profile update response:', updatedProfile)
+      onSave(updatedProfile)
+      if (setUserProfile) setUserProfile(updatedProfile)
       toast({
         title: "Profile updated",
         description: "Your profile has been updated successfully",
       })
-
       setIsOpen(false)
     } catch (error: any) {
       toast({
@@ -129,7 +192,7 @@ export function ProfileEditDialog({ profile, onSave, trigger }: ProfileEditDialo
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-[500px] bg-card border-border/50">
+      <DialogContent className="sm:max-w-[500px] md:max-w-[600px] max-h-[90vh] overflow-y-auto bg-card border-border/50">
         <DialogHeader>
           <DialogTitle className="text-xl neon-text">Edit Profile</DialogTitle>
           <DialogDescription>Update your profile information and images</DialogDescription>
@@ -158,6 +221,20 @@ export function ProfileEditDialog({ profile, onSave, trigger }: ProfileEditDialo
             </div>
             <div className="grid gap-2">
               <Label htmlFor="avatar">Profile Picture</Label>
+              <RadioGroup
+                value={avatarUploadMethod}
+                onValueChange={val => setAvatarUploadMethod(val as 'cloudinary' | 'ipfs')}
+                className="flex gap-4 mb-2"
+              >
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="cloudinary" checked={avatarUploadMethod === 'cloudinary'} onChange={() => setAvatarUploadMethod('cloudinary')} />
+                  Cloudinary
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="ipfs" checked={avatarUploadMethod === 'ipfs'} onChange={() => setAvatarUploadMethod('ipfs')} />
+                  IPFS
+                </label>
+              </RadioGroup>
               <div className="flex items-center gap-2">
                 <Input
                   ref={avatarInputRef}
@@ -196,6 +273,20 @@ export function ProfileEditDialog({ profile, onSave, trigger }: ProfileEditDialo
             </div>
             <div className="grid gap-2">
               <Label htmlFor="banner">Profile Banner</Label>
+              <RadioGroup
+                value={bannerUploadMethod}
+                onValueChange={val => setBannerUploadMethod(val as 'cloudinary' | 'ipfs')}
+                className="flex gap-4 mb-2"
+              >
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="cloudinary" checked={bannerUploadMethod === 'cloudinary'} onChange={() => setBannerUploadMethod('cloudinary')} />
+                  Cloudinary
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="ipfs" checked={bannerUploadMethod === 'ipfs'} onChange={() => setBannerUploadMethod('ipfs')} />
+                  IPFS
+                </label>
+              </RadioGroup>
               <div className="flex items-center gap-2">
                 <Input
                   ref={bannerInputRef}

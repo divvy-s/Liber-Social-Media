@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
+import { createContext, useContext, useState, type ReactNode, useEffect, useCallback } from "react"
 import { useWeb3 } from "@/components/web3-provider"
 import { useToast } from "@/components/ui/use-toast"
 
@@ -163,6 +163,10 @@ interface PostContextType {
   getPostComments: (postId: string) => Comment[]
   incrementShareCount: (postId: string) => void
   mintPost: (postId: string) => Promise<void>
+  fetchNextPage: () => Promise<void>
+  hasMore: boolean
+  isFetchingNextPage: boolean
+  fetchPostComments: (postId: string) => Promise<Comment[]>
 }
 
 const PostContext = createContext<PostContextType | undefined>(undefined)
@@ -174,37 +178,68 @@ export function PostProvider({ children }: { children: ReactNode }) {
   const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS)
   const [comments, setComments] = useState<Comment[]>(INITIAL_COMMENTS)
   const [isLoading, setIsLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+  const [isFetchingNextPage, setIsFetchingNextPage] = useState(false)
   const { account, mintNFT, isCorrectNetwork } = useWeb3()
   const { toast } = useToast()
+  const [commentsByPost, setCommentsByPost] = useState<{ [postId: string]: Comment[] }>({})
 
-  // Load posts and comments from localStorage on initial render
-  useEffect(() => {
-    const loadData = () => {
-      try {
-        const savedPosts = localStorage.getItem(LOCAL_STORAGE_KEY_POSTS)
-        if (savedPosts) {
-          setPosts(JSON.parse(savedPosts))
-        }
-
-        const savedComments = localStorage.getItem(LOCAL_STORAGE_KEY_COMMENTS)
-        if (savedComments) {
-          setComments(JSON.parse(savedComments))
-        }
-
-        setIsLoading(false)
-      } catch (error) {
-        console.error("Failed to load data from localStorage:", error)
-        setIsLoading(false)
+  // Fetch posts paginated
+  const fetchPosts = async (pageNum = 1, append = false) => {
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const res = await fetch(`${apiBaseUrl}/api/posts?page=${pageNum}&limit=10`);
+      if (res.ok) {
+        const data = await res.json();
+        const backendPosts = data.posts || [];
+        
+        // Transform backend posts to match frontend Post interface
+        const transformedPosts = backendPosts.map((post: any) => ({
+          id: post._id || post.id,
+          title: post.title || "Untitled Post", // Add default title if not present
+          content: post.content,
+          author: {
+            address: post.user?.walletAddress || "Unknown",
+            username: post.user?.username || "User",
+            avatar: post.user?.avatar || "/placeholder.svg",
+          },
+          createdAt: post.createdAt,
+          upvotes: post.upvotes || 0,
+          downvotes: post.downvotes || 0,
+          commentCount: post.commentCount || 0,
+          shareCount: post.shares || 0,
+          tokenId: post.nftTokenId || "",
+          isMinted: !!post.nftTokenId,
+          imageUrl: post.image,
+          txHash: post.txHash,
+        }));
+        
+        setHasMore(pageNum < data.pages);
+        setPage(pageNum);
+        setPosts((prev) => append ? [...prev, ...transformedPosts] : transformedPosts);
+        setIsLoading(false);
+        return;
       }
+    } catch (error) {
+      console.error("Failed to fetch posts from backend:", error);
     }
+    setIsLoading(false);
+  };
 
-    // Use setTimeout to avoid hydration issues
-    const timer = setTimeout(() => {
-      loadData()
-    }, 0)
+  // Initial fetch
+  useEffect(() => {
+    fetchPosts(1, false);
+    // eslint-disable-next-line
+  }, []);
 
-    return () => clearTimeout(timer)
-  }, [])
+  // Fetch next page for infinite scroll
+  const fetchNextPage = async () => {
+    if (isFetchingNextPage || !hasMore) return;
+    setIsFetchingNextPage(true);
+    await fetchPosts(page + 1, true);
+    setIsFetchingNextPage(false);
+  };
 
   // Save posts to localStorage whenever they change
   useEffect(() => {
@@ -239,17 +274,54 @@ export function PostProvider({ children }: { children: ReactNode }) {
   const addComment = (comment: Comment) => {
     setComments((prevComments) => [...prevComments, comment])
 
+    // Add comment to the commentsByPost cache
+    setCommentsByPost((prev) => ({
+      ...prev,
+      [comment.postId]: [...(prev[comment.postId] || []), comment]
+    }))
+
     // Update the comment count on the post
     updatePost(comment.postId, {
       commentCount: posts.find((p) => p.id === comment.postId)?.commentCount + 1 || 1,
     })
   }
 
+  // Fetch comments for a post from backend
+  const fetchPostComments = useCallback(async (postId: string) => {
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const res = await fetch(`${apiBaseUrl}/api/comment/post/${postId}`);
+      if (res.ok) {
+        const backendComments = await res.json();
+        
+        // Transform backend comments to match frontend Comment interface
+        const transformedComments = backendComments.map((comment: any) => ({
+          id: comment._id || comment.id,
+          postId: comment.post,
+          content: comment.content,
+          author: {
+            address: comment.user?.walletAddress || "Unknown",
+            username: comment.user?.username || "User",
+            avatar: comment.user?.avatar || "/placeholder.svg",
+          },
+          createdAt: comment.createdAt,
+        }));
+        
+        setCommentsByPost((prev) => ({ ...prev, [postId]: transformedComments }));
+        return transformedComments;
+      }
+    } catch (error) {
+      console.error("Failed to fetch comments from backend:", error);
+    }
+    return [];
+  }, []);
+
+  // Get comments for a post (from cache)
   const getPostComments = (postId: string) => {
-    return comments
-      .filter((comment) => comment.postId === postId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }
+    return (
+      commentsByPost[postId] || []
+    ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
 
   const incrementShareCount = (postId: string) => {
     updatePost(postId, {
@@ -262,49 +334,27 @@ export function PostProvider({ children }: { children: ReactNode }) {
       throw new Error("Wallet not connected")
     }
 
-    if (!isCorrectNetwork) {
-      throw new Error("Please switch to Sepolia network to mint NFTs")
-    }
-
     const post = posts.find((p) => p.id === postId)
     if (!post) {
       throw new Error("Post not found")
     }
 
-    // Create metadata for the NFT
-    const metadata = {
-      name: post.title,
-      description: post.content,
-      image: post.imageUrl || "https://via.placeholder.com/500",
-      attributes: [
-        {
-          trait_type: "Author",
-          value: post.author.username,
-        },
-        {
-          trait_type: "Created",
-          value: new Date(post.createdAt).toISOString(),
-        },
-      ],
-    }
-
-    // In a real app, we would upload this metadata to IPFS
-    // For this demo, we'll use a mock URI
-    const tokenURI = `ipfs://QmExample/${postId}`
-
     try {
-      // Call the mintNFT function from the Web3Provider
-      const txHash = await mintNFT(tokenURI)
-
-      // Update the post with the transaction hash and mark it as minted
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+      const res = await fetch(`${apiBaseUrl}/api/nft/mint/${postId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) throw new Error('Failed to mint NFT on backend')
+      const data = await res.json()
       updatePost(postId, {
         isMinted: true,
-        txHash,
+        tokenId: data.tokenId,
+        txHash: data.post?.txHash || '',
       })
-
       toast({
         title: "NFT Minted Successfully",
-        description: "Your post has been minted as an NFT on the Sepolia network",
+        description: "Your post has been minted as an NFT.",
       })
     } catch (error: any) {
       toast({
@@ -318,7 +368,11 @@ export function PostProvider({ children }: { children: ReactNode }) {
 
   // Filter posts by the current user's address
   const userPosts = posts.filter(
-    (post) => account && post.author.address && post.author.address.toLowerCase() === account.toLowerCase(),
+    (post) =>
+      account &&
+      post.author &&
+      post.author.address &&
+      post.author.address.toLowerCase() === account.toLowerCase()
   )
 
   return (
@@ -334,6 +388,10 @@ export function PostProvider({ children }: { children: ReactNode }) {
         getPostComments,
         incrementShareCount,
         mintPost,
+        fetchNextPage,
+        hasMore,
+        isFetchingNextPage,
+        fetchPostComments,
       }}
     >
       {children}

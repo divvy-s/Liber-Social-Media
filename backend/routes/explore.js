@@ -27,7 +27,7 @@ router.get('/posts/:query', async (req, res) => {
 router.get('/hashtags/:query', async (req, res) => {
   try {
     const regex = new RegExp(`#${req.params.query}`, 'i');
-    const posts = await Post.find({ content: { $regex: regex } });
+    const posts = await Post.find({ content: { $regex: regex } }).populate('user');
     res.json(posts);
   } catch (err) {
     res.status(500).json({ error: err.message });

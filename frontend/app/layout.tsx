@@ -5,7 +5,6 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Web3Provider } from "@/components/web3-provider"
 import { Toaster } from "@/components/ui/toaster"
-import { SocketProvider } from "@/components/socket-context";
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -25,13 +24,19 @@ export default function RootLayout({
       <body className={`${inter.className} bg-black text-white antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
           <Web3Provider>
-            <SocketProvider>
-              {children}
-              <Toaster />
-            </SocketProvider>
+            {children}
+            <Toaster />
           </Web3Provider>
         </ThemeProvider>
       </body>
     </html>
   )
 }
+
+import "./globals.css"
+
+import "./globals.css"
+
+
+
+import './globals.css'

@@ -40,9 +40,11 @@ type Web3ContextType = {
   mintNFT: (tokenURI: string) => Promise<string>
   isCorrectNetwork: boolean
   nftContract: any
+  userProfile: any
+  setUserProfile: (profile: any) => void
 }
 
-export const Web3Context = createContext<Web3ContextType & { user: any }>({
+const Web3Context = createContext<Web3ContextType>({
   account: null,
   provider: null,
   signer: null,
@@ -54,8 +56,9 @@ export const Web3Context = createContext<Web3ContextType & { user: any }>({
   mintNFT: async () => "",
   isCorrectNetwork: false,
   nftContract: null,
-  user: null,
-});
+  userProfile: null,
+  setUserProfile: () => {},
+})
 
 export const useWeb3 = () => useContext(Web3Context)
 
@@ -66,7 +69,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false)
   const [chainId, setChainId] = useState<number | null>(null)
   const [nftContract, setNftContract] = useState<any>(null)
-  const [user, setUser] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<any>(null)
   const { toast } = useToast()
 
   // Check if user is on the correct network (Sepolia)
@@ -175,20 +178,25 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
       const contract = new ethers.Contract(NFT_CONTRACT_ADDRESS, NFT_CONTRACT_ABI, signer)
       setNftContract(contract)
 
-      // Backend authentication
-      const message = `Sign in to Liber at ${new Date().toISOString()}`;
-      const signature = await signer.signMessage(message);
-      const res = await fetch("/api/auth/wallet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: accounts[0], signature, message }),
-      });
-      const userData = await res.json();
-      setUser(userData);
+      // Authenticate with backend
+      const message = `Sign this message to login to Liber at ${new Date().toISOString()}`
+      const signature = await signer.signMessage(message)
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+      const res = await fetch(`${apiBaseUrl}/api/auth/wallet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: accounts[0], signature, message })
+      })
+      if (res.ok) {
+        const user = await res.json()
+        setUserProfile(user)
+      } else {
+        setUserProfile(null)
+      }
 
       toast({
         title: "Connected",
-        description: "Your wallet has been connected and authenticated",
+        description: "Your wallet has been connected successfully",
       })
 
       // Check if on Sepolia, if not prompt to switch
@@ -282,31 +290,26 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch user session/profile after login
-  useEffect(() => {
-    if (!account) return;
-    fetch(`/api/auth/me/${account}`)
-      .then((res) => res.json())
-      .then((data) => setUser(data));
-  }, [account]);
-
   return (
-    <Web3Context.Provider value={{
-      account,
-      provider,
-      signer,
-      connect,
-      disconnect,
-      isConnecting,
-      chainId,
-      switchNetwork,
-      mintNFT,
-      isCorrectNetwork,
-      nftContract,
-      user,
-    }}>
+    <Web3Context.Provider
+      value={{
+        account,
+        provider,
+        signer,
+        connect,
+        disconnect,
+        isConnecting,
+        chainId,
+        switchNetwork,
+        mintNFT,
+        isCorrectNetwork,
+        nftContract,
+        userProfile,
+        setUserProfile,
+      }}
+    >
       {children}
     </Web3Context.Provider>
-  );
+  )
 }
 

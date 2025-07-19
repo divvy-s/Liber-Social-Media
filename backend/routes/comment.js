@@ -10,10 +10,14 @@ router.post('/', async (req, res) => {
   try {
     const comment = new Comment({ post, user, content });
     await comment.save();
-    // Emit live feed update
-    if (req.app.emitFeedEvent) {
-      req.app.emitFeedEvent('newComment', comment);
+    
+    // Update user stats after creating comment
+    try {
+      await User.findByIdAndUpdate(user, { $inc: { totalComments: 1 } });
+    } catch (statsError) {
+      console.error('Error updating user stats:', statsError);
     }
+    
     res.json(comment);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -26,6 +30,21 @@ router.get('/post/:postId', async (req, res) => {
     const comments = await Comment.find({ post: req.params.postId }).populate('user').sort({ createdAt: 1 });
     res.json(comments);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all comments by a specific user
+router.get('/user/:userId', async (req, res) => {
+  try {
+    const comments = await Comment.find({ user: req.params.userId })
+      .populate('user', 'username avatar walletAddress')
+      .populate('post', 'title content')
+      .sort({ createdAt: -1 })
+      .limit(50);
+    res.json(comments);
+  } catch (err) {
+    console.error('Error fetching user comments:', err);
     res.status(500).json({ error: err.message });
   }
 });

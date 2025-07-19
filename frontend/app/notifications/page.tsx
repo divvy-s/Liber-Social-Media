@@ -1,3 +1,5 @@
+"use client"
+
 import { MainNav } from "@/components/main-nav"
 import { WalletConnect } from "@/components/wallet-connect"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -6,51 +8,33 @@ import { PostProvider } from "@/components/post-context"
 import { Bell, Heart, MessageSquare, Repeat, User } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { formatDistanceToNow } from "date-fns"
-import { useSocket } from "@/components/socket-context";
-import { useEffect, useState } from "react";
-import { toast } from "@/components/ui/use-toast";
-import { Button } from "@/components/ui/button";
-import { useWeb3 } from "@/components/web3-provider";
+import { useEffect, useState } from "react"
+import { useWeb3 } from "@/components/web3-provider"
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const socket = useSocket();
-  const { user } = useWeb3();
-  const userId = user?._id;
-
-  useEffect(() => {
-    if (socket && userId) {
-      socket.emit("join", userId);
-      socket.on("notification", (notification) => {
-        setNotifications((prev) => [notification, ...prev]);
-        toast({
-          title: "New Notification",
-          description: notification.content || notification.type,
-        });
-      });
-      return () => {
-        socket.off("notification");
-      };
-    }
-  }, [socket, userId]);
+  const { account } = useWeb3()
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
 
   // Fetch notifications from backend
   useEffect(() => {
-    if (!userId) return;
-    fetch(`/api/notification/user/${userId}`)
-      .then((res) => res.json())
-      .then((data) => setNotifications(data));
-  }, [userId]);
-
-  // Mark as read/unread
-  const markAsRead = async (id: string) => {
-    await fetch(`/api/notification/${id}/read`, { method: "POST" });
-    setNotifications((prev) => prev.map((n) => n._id === id ? { ...n, read: true } : n));
-  };
-  const markAsUnread = async (id: string) => {
-    await fetch(`/api/notification/${id}/unread`, { method: "POST" });
-    setNotifications((prev) => prev.map((n) => n._id === id ? { ...n, read: false } : n));
-  };
+    const fetchNotifications = async () => {
+      if (!account) return
+      setLoading(true)
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+        const res = await fetch(`${apiBaseUrl}/api/notification`)
+        if (res.ok) {
+          let data = await res.json()
+          // Filter notifications for the current user if needed
+          data = data.filter((n: any) => n.user === account || n.user?._id === account)
+          setNotifications(data)
+        }
+      } catch (error) {}
+      setLoading(false)
+    }
+    fetchNotifications()
+  }, [account])
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -99,35 +83,43 @@ export default function NotificationsPage() {
                       Recent Notifications
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {notifications.map((notification, idx) => (
-                        <div key={notification._id || idx} className="flex items-center gap-4">
-                          <Avatar>
-                            <AvatarImage src={notification.fromUser?.avatar || "/placeholder.svg"} />
-                            <AvatarFallback>
-                              {notification.fromUser?.username?.slice(0, 2).toUpperCase() || "U"}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <div className="font-medium">
-                              {notification.fromUser?.username || "Someone"} {notification.content || notification.type}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {new Date(notification.createdAt).toLocaleString()}
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant={notification.read ? "outline" : "default"}
-                            onClick={() => notification.read ? markAsUnread(notification._id) : markAsRead(notification._id)}
-                            className="ml-auto"
+                  <CardContent className="p-4">
+                    {loading ? (
+                      <div className="text-center text-muted-foreground">Loading...</div>
+                    ) : notifications.length === 0 ? (
+                      <div className="text-center text-muted-foreground">No notifications yet.</div>
+                    ) : (
+                      <div className="space-y-4">
+                        {notifications.map((notification) => (
+                          <div
+                            key={notification._id}
+                            className={`flex items-start p-3 rounded-md transition-colors ${
+                              notification.read ? "bg-transparent" : "bg-muted"
+                            }`}
                           >
-                            {notification.read ? "Mark as Unread" : "Mark as Read"}
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
+                            <div className="flex-shrink-0 mr-4">
+                              <Avatar>
+                                <AvatarImage src={notification.fromUser?.avatar || "/placeholder.svg?height=50&width=50"} alt={notification.fromUser?.username || "User"} />
+                                <AvatarFallback>{notification.fromUser?.username?.slice(0, 2).toUpperCase() || "US"}</AvatarFallback>
+                              </Avatar>
+                            </div>
+                            <div className="flex-grow">
+                              <div className="flex items-center">
+                                <span className="font-medium">@{notification.fromUser?.username || "User"}</span>
+                                <span className="mx-1">{notification.type === "like" ? "liked your post" : notification.type === "comment" ? "commented on your post" : notification.type === "follow" ? "started following you" : notification.type === "repost" ? "reposted your post" : notification.content}</span>
+                                {notification.post?.title && (
+                                  <span className="font-medium text-primary">"{notification.post.title}"</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 ml-2">{getNotificationIcon(notification.type)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -139,80 +131,88 @@ export default function NotificationsPage() {
               <TabsContent value="likes" className="mt-4">
                 <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
                   <CardContent className="p-4">
-                    <div className="space-y-4">
-                      {notifications
-                        .filter((n) => n.type === "like")
-                        .map((notification) => (
-                          <div
-                            key={notification.id}
-                            className={`flex items-start p-3 rounded-md transition-colors ${
-                              notification.read ? "bg-transparent" : "bg-muted"
-                            }`}
-                          >
-                            <div className="flex-shrink-0 mr-4">
-                              <Avatar>
-                                <AvatarImage src={notification.user.avatar} alt={notification.user.username} />
-                                <AvatarFallback>{notification.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                              </Avatar>
-                            </div>
-                            <div className="flex-grow">
+                    {loading ? (
+                      <div className="text-center text-muted-foreground">Loading...</div>
+                    ) : notifications.filter((n) => n.type === "like").length === 0 ? (
+                      <div className="text-center text-muted-foreground">No likes yet.</div>
+                    ) : (
+                      <div className="space-y-4">
+                        {notifications
+                          .filter((n) => n.type === "like")
+                          .map((notification) => (
+                            <div
+                              key={notification._id}
+                              className={`flex items-start p-3 rounded-md transition-colors ${
+                                notification.read ? "bg-transparent" : "bg-muted"
+                              }`}
+                            >
+                              <div className="flex-shrink-0 mr-4">
+                                <Avatar>
+                                  <AvatarImage src={notification.fromUser?.avatar || "/placeholder.svg?height=50&width=50"} alt={notification.fromUser?.username || "User"} />
+                                  <AvatarFallback>{notification.fromUser?.username?.slice(0, 2).toUpperCase() || "US"}</AvatarFallback>
+                                </Avatar>
+                              </div>
                               <div className="flex items-center">
-                                <span className="font-medium">@{notification.user.username}</span>
-                                <span className="mx-1">{notification.content}</span>
-                                {notification.postTitle && (
-                                  <span className="font-medium text-primary">"{notification.postTitle}"</span>
+                                <span className="font-medium">@{notification.fromUser?.username || "User"}</span>
+                                <span className="mx-1">liked your post</span>
+                                {notification.post?.title && (
+                                  <span className="font-medium text-primary">"{notification.post.title}"</span>
                                 )}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
                               </div>
+                              <div className="flex-shrink-0 ml-2">
+                                <Heart className="h-4 w-4 text-red-500" />
+                              </div>
                             </div>
-                            <div className="flex-shrink-0 ml-2">
-                              <Heart className="h-4 w-4 text-red-500" />
-                            </div>
-                          </div>
-                        ))}
-                    </div>
+                          ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
               <TabsContent value="reposts" className="mt-4">
                 <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
                   <CardContent className="p-4">
-                    <div className="space-y-4">
-                      {notifications
-                        .filter((n) => n.type === "repost")
-                        .map((notification) => (
-                          <div
-                            key={notification.id}
-                            className={`flex items-start p-3 rounded-md transition-colors ${
-                              notification.read ? "bg-transparent" : "bg-muted"
-                            }`}
-                          >
-                            <div className="flex-shrink-0 mr-4">
-                              <Avatar>
-                                <AvatarImage src={notification.user.avatar} alt={notification.user.username} />
-                                <AvatarFallback>{notification.user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                              </Avatar>
-                            </div>
-                            <div className="flex-grow">
-                              <div className="flex items-center">
-                                <span className="font-medium">@{notification.user.username}</span>
-                                <span className="mx-1">{notification.content}</span>
-                                {notification.postTitle && (
-                                  <span className="font-medium text-primary">"{notification.postTitle}"</span>
-                                )}
+                    {loading ? (
+                      <div className="text-center text-muted-foreground">Loading...</div>
+                    ) : notifications.filter((n) => n.type === "repost").length === 0 ? (
+                      <div className="text-center text-muted-foreground">No reposts yet.</div>
+                    ) : (
+                      <div className="space-y-4">
+                        {notifications
+                          .filter((n) => n.type === "repost")
+                          .map((notification) => (
+                            <div
+                              key={notification._id}
+                              className={`flex items-start p-3 rounded-md transition-colors ${
+                                notification.read ? "bg-transparent" : "bg-muted"
+                              }`}
+                            >
+                              <div className="flex-shrink-0 mr-4">
+                                <Avatar>
+                                  <AvatarImage src={notification.fromUser?.avatar || "/placeholder.svg?height=50&width=50"} alt={notification.fromUser?.username || "User"} />
+                                  <AvatarFallback>{notification.fromUser?.username?.slice(0, 2).toUpperCase() || "US"}</AvatarFallback>
+                                </Avatar>
                               </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                              <div className="flex-grow">
+                                <div className="flex items-center">
+                                  <span className="font-medium">@{notification.fromUser?.username || "User"}</span>
+                                  <span className="mx-1">reposted your post</span>
+                                  {notification.post?.title && (
+                                    <span className="font-medium text-primary">"{notification.post.title}"</span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex-shrink-0 ml-2">
                               <Repeat className="h-4 w-4 text-blue-500" />
                             </div>
-                          </div>
-                        ))}
-                    </div>
+                          ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
