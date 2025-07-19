@@ -52,11 +52,13 @@ export default function TrendingUsersPage() {
                       className="flex items-center justify-between hover:bg-muted p-2 rounded-md transition-colors"
                     >
                       <div className="flex items-center">
-                        <Avatar className="w-10 h-10 mr-3">
-                          <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.username} />
-                          <AvatarFallback>{user.username?.slice(0, 2).toUpperCase() || "US"}</AvatarFallback>
-                        </Avatar>
-                        <span className="font-medium">@{user.username || user.walletAddress}</span>
+                        <a href={`/profile/${user.walletAddress}`} className="flex items-center group">
+                          <Avatar className="w-10 h-10 mr-3 group-hover:ring-2 group-hover:ring-primary transition">
+                            <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.username} />
+                            <AvatarFallback>{user.username?.slice(0, 2).toUpperCase() || "US"}</AvatarFallback>
+                          </Avatar>
+                          <span className="font-medium group-hover:text-primary transition">@{user.username || user.walletAddress}</span>
+                        </a>
                       </div>
                       <span className="text-sm text-muted-foreground">
                         {user.followers?.length || 0} followers

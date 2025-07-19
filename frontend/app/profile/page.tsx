@@ -185,6 +185,26 @@ export default function ProfilePage() {
     )
   }
 
+  // If not connected, prompt to connect MetaMask
+  if (!account) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <header className="border-b border-border/40 backdrop-blur-sm sticky top-0 z-50">
+          <div className="container flex h-16 items-center justify-between">
+            <MainNav />
+            <div className="flex items-center gap-4">
+              <WalletConnect />
+            </div>
+          </div>
+        </header>
+        <main className="flex-1 container py-6 flex flex-col items-center justify-center">
+          <div className="text-center text-muted-foreground mb-4">Please connect your MetaMask wallet to view your profile.</div>
+          <WalletConnect />
+        </main>
+      </div>
+    )
+  }
+
   return (
     <PostProvider>
       <ProfileContent
@@ -252,16 +272,18 @@ function ProfileContent({
           </div>
 
           <div className="absolute bottom-4 right-4 flex gap-2">
-            <ProfileEditDialog
-              profile={profile}
-              onSave={onProfileUpdate}
-              trigger={
-                <Button variant="outline" size="sm" className="bg-background/80 backdrop-blur-sm">
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit Profile
-                </Button>
-              }
-            />
+            {account && (!profile.walletAddress || account.toLowerCase() === profile.walletAddress?.toLowerCase()) && (
+              <ProfileEditDialog
+                profile={profile}
+                onSave={onProfileUpdate}
+                trigger={
+                  <Button variant="outline" size="sm" className="bg-background/80 backdrop-blur-sm">
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </Button>
+                }
+              />
+            )}
             <Button variant="outline" size="sm" className="bg-background/80 backdrop-blur-sm" asChild>
               <a
                 href={`https://opensea.io/assets/ethereum/${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}/${profile.tokenId}`}
