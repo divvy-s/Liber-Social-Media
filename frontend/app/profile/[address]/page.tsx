@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Edit, ExternalLink, Twitter, Globe, Github, MessageCircle, Send } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 const DEFAULT_PROFILE = {
   username: "crypto_enthusiast",
@@ -35,12 +36,14 @@ const DEFAULT_PROFILE = {
 export default function PublicProfilePage() {
   const params = useParams()
   const address = params?.address as string
-  const { account } = useWeb3()
+  const { account, userProfile, setUserProfile } = useWeb3()
+  const { toast } = useToast()
   const [profile, setProfile] = useState(DEFAULT_PROFILE)
   const [userNFTs, setUserNFTs] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState("posts")
   const [loading, setLoading] = useState(true)
   const [bannerCacheBust, setBannerCacheBust] = useState(0)
+  const [isFollowLoading, setIsFollowLoading] = useState(false)
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -105,6 +108,61 @@ export default function PublicProfilePage() {
     telegram: Send,
   }
 
+  // Determine if the current user is following this profile
+  const isFollowing = !!(profile.followers && userProfile && profile.followers.some((f: any) => f.walletAddress?.toLowerCase() === userProfile.walletAddress?.toLowerCase()))
+  const isOwnProfile = account && account.toLowerCase() === address?.toLowerCase()
+
+  // Follow/Unfollow handlers
+  const handleFollow = async () => {
+    if (!userProfile || !profile._id) return
+    setIsFollowLoading(true)
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+      const res = await fetch(`${apiBaseUrl}/api/users/${profile._id}/follow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: userProfile._id })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setProfile((prev: any) => ({ ...prev, followers: data.user.followers }))
+        setUserProfile && setUserProfile({ ...userProfile, following: data.follower.following })
+        toast({ title: 'Followed', description: `You are now following @${profile.username}` })
+      } else {
+        toast({ title: 'Error', description: 'Failed to follow user', variant: 'destructive' })
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to follow user', variant: 'destructive' })
+    } finally {
+      setIsFollowLoading(false)
+    }
+  }
+
+  const handleUnfollow = async () => {
+    if (!userProfile || !profile._id) return
+    setIsFollowLoading(true)
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+      const res = await fetch(`${apiBaseUrl}/api/users/${profile._id}/unfollow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: userProfile._id })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setProfile((prev: any) => ({ ...prev, followers: data.user.followers }))
+        setUserProfile && setUserProfile({ ...userProfile, following: data.follower.following })
+        toast({ title: 'Unfollowed', description: `You have unfollowed @${profile.username}` })
+      } else {
+        toast({ title: 'Error', description: 'Failed to unfollow user', variant: 'destructive' })
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to unfollow user', variant: 'destructive' })
+    } finally {
+      setIsFollowLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -144,7 +202,7 @@ export default function PublicProfilePage() {
               </Avatar>
             </div>
             <div className="absolute bottom-4 right-4 flex gap-2">
-              {account && account.toLowerCase() === address?.toLowerCase() && (
+              {isOwnProfile && (
                 <ProfileEditDialog
                   profile={profile}
                   onSave={handleProfileUpdate}
@@ -155,6 +213,17 @@ export default function PublicProfilePage() {
                     </Button>
                   }
                 />
+              )}
+              {!isOwnProfile && account && userProfile && profile._id && (
+                <Button
+                  variant={isFollowing ? "secondary" : "default"}
+                  size="sm"
+                  className="bg-background/80 backdrop-blur-sm"
+                  onClick={isFollowing ? handleUnfollow : handleFollow}
+                  disabled={isFollowLoading}
+                >
+                  {isFollowLoading ? (isFollowing ? "Unfollowing..." : "Following...") : isFollowing ? "Unfollow" : "Follow"}
+                </Button>
               )}
               <Button variant="outline" size="sm" className="bg-background/80 backdrop-blur-sm" asChild>
                 <a

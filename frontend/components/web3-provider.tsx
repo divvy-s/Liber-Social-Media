@@ -152,6 +152,25 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Automatically fetch userProfile if account is set but userProfile is null
+  useEffect(() => {
+    if (account && !userProfile) {
+      const fetchProfile = async () => {
+        try {
+          const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+          const res = await fetch(`${apiBaseUrl}/api/users/${account}`)
+          if (res.ok) {
+            const user = await res.json()
+            setUserProfile(user)
+          }
+        } catch (err) {
+          // ignore
+        }
+      }
+      fetchProfile()
+    }
+  }, [account, userProfile])
+
   const connect = async () => {
     if (!window.ethereum) {
       toast({
