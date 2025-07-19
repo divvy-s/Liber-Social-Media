@@ -243,7 +243,7 @@ function ProfileContent({
   const { userPosts } = usePosts()
 
   // Count user NFTs (posts)
-  const nftCount = userPosts.length
+  const nftCount = userNFTs.length
 
   // Only add cache-busting on the client
   const [isClient, setIsClient] = useState(false)
